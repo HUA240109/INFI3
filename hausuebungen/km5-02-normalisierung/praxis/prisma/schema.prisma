@@ -1,0 +1,198 @@
+// Prisma-Schema zur Hausübung KM5-02 "Normalisierung 1NF–3NF".
+//
+// Grundidee: Jede Stufe kommt **zweimal** vor — einmal denormalisiert (der
+// Fehlerfall aus der Lesson) und einmal normalisiert (der 3NF-Fix). Das
+// Suffix `Denorm` markiert die kaputte Variante.
+//
+// An den Denorm-Modellen lässt sich die Anomalie mit einer Query messen; an den
+// normalisierten Modellen sieht man, dass dieselbe Query plötzlich stimmt.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// =============================================================
+// 1NF — Atomarität
+// =============================================================
+
+/// Verletzung A: zwei Hobbys in einer Zelle ("Lesen, Schwimmen").
+/// Abhängigkeit: kundeId → { name, hobbys } — hobbys ist nicht atomar.
+model KundeDenorm {
+  kundeId Int    @id
+  name    String
+  hobbys  String
+}
+
+/// 1NF-Fix: eine Zeile pro Wert, PK = (kundeId, hobby).
+/// Abhängigkeit: (kundeId, hobby) → {} — kein Attribut hängt an nur einem Teil.
+model Hobby {
+  kundeId Int
+  hobby   String
+
+  @@id([kundeId, hobby])
+}
+
+/// Verletzung B: Wiederholgruppe als Spalten track1/track2/track3.
+/// Abhängigkeit: bestellNr → { kunde, track1, track2, track3 }
+model BestellungRepeat {
+  bestellNr Int    @id
+  kunde     String
+  track1    Int?
+  track2    Int?
+  track3    Int?
+}
+
+/// 1NF-Fix: eine Zeile pro Vorkommen, PK = (bestellNr, position).
+/// Die Positionsnummer ist nötig, sonst kann die Kindtabelle zwei Tracks
+/// derselben Bestellung nicht auseinanderhalten.
+model Bestellposition {
+  bestellNr Int
+  position  Int
+  trackId   Int
+  bestellung Bestellung @relation(fields: [bestellNr], references: [bestellNr])
+  song       Song       @relation(fields: [trackId], references: [songId])
+
+  @@id([bestellNr, position])
+}
+
+// =============================================================
+// 2NF — volle funktionale Abhängigkeit
+// =============================================================
+
+model Song {
+  songId          Int                  @id
+  titel           String
+  dauerSek        Int
+  playlists       SongPlaylist[]
+  verbindungen    SongPlaylistDenorm[]
+  bestellpositionen Bestellposition[]
+}
+
+model Playlist {
+  playlistId Int            @id
+  name       String
+  songs      SongPlaylist[]
+}
+
+/// Quiz 7 — Verletzung: `songTitel` hängt nur an songId, einem Teil des PK.
+/// songId → titel  ⇒ partielle Abhängigkeit ⇒ 2NF verletzt.
+/// Folge: ein Titelumbenennen muss in mehreren Zeilen gepflegt werden.
+model SongPlaylistDenorm {
+  songId     Int
+  playlistId Int
+  songTitel  String
+  song       Song @relation(fields: [songId], references: [songId])
+
+  @@id([songId, playlistId])
+}
+
+/// 2NF-Fix: die Zwischentabelle trägt nur noch die Beziehung, sonst nichts.
+model SongPlaylist {
+  songId     Int
+  playlistId Int
+  song       Song     @relation(fields: [songId], references: [songId])
+  playlist   Playlist @relation(fields: [playlistId], references: [playlistId])
+
+  @@id([songId, playlistId])
+}
+
+model Produkt {
+  produktNr  Int                      @id
+  name        String
+  positionen  BestellpositionProd[]
+}
+
+/// Quiz 8 — Verletzung: `produktName` hängt nur an produktNr.
+/// bestellNr, produktNr → produktName  ⇒ partielle Abhängigkeit ⇒ 2NF verletzt.
+model BestellpositionProdDenorm {
+  bestellNr   Int
+  produktNr   Int
+  menge       Int
+  produktName String
+
+  @@id([bestellNr, produktNr])
+}
+
+/// 2NF-Fix: nur noch die Position als Tatsache.
+model BestellpositionProd {
+  bestellNr  Int
+  produktNr  Int
+  menge      Int
+  produkt    Produkt   @relation(fields: [produktNr], references: [produktNr])
+  bestellung Bestellung @relation(fields: [bestellNr], references: [bestellNr])
+
+  @@id([bestellNr, produktNr])
+}
+
+/// Gegenprobe zu Quiz 9: `menge` hängt am **ganzen** Schlüssel
+/// (bestellNr, produktNr) — hier ist nichts auszulagern.
+model Pruefung {
+  matrNr Int
+  lvNr   String
+  note   Int
+
+  @@id([matrNr, lvNr])
+}
+
+// =============================================================
+// 3NF — transitive Abhängigkeit
+// =============================================================
+
+/// Die Ausgangstabelle der Hausübung (aus seed-normalisierung.sql).
+/// Abhängigkeiten: bestellNr → { kunde, plz, ort }  und  plz → ort.
+model BestellungDenorm {
+  bestellNr Int    @id
+  kunde     String
+  plz       String
+  ort       String
+}
+
+/// Faktentabelle der transitiven Abhängigkeit: plz → ort, genau einmal gespeichert.
+model Plz {
+  plz          String      @id
+  ort          String
+  bestellungen Bestellung[]
+}
+
+/// 3NF-Fix: `plz` ist ein Fremdschlüssel, `ort` lebt in Plz.
+model Bestellung {
+  bestellNr  Int
+  kunde      String
+  plz        String
+  plzOrt     Plz                   @relation(fields: [plz], references: [plz])
+  positionen BestellpositionProd[]
+  tracks     Bestellposition[]
+
+  @@id([bestellNr])
+}
+
+// =============================================================
+// Zerlegung Teil 3 der Aufgabe: zwei Quiz-Tabellen
+// =============================================================
+
+/// Quiz 13 — konto(iban PK, inhaber, blz, bankname).
+/// Transitive Kette: iban → blz → bankname ⇒ 3NF verletzt.
+model KontoDenorm {
+  iban     String @id
+  inhaber  String
+  blz      String
+  bankname String
+}
+
+/// Faktentabelle der Kette: blz → bankname.
+model Bank {
+  blz    String @id
+  name   String
+  konten Konto[]
+}
+
+model Konto {
+  iban    String @id
+  inhaber String
+  blz     String
+  bank    Bank   @relation(fields: [blz], references: [blz])
+}

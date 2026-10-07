@@ -1,0 +1,29 @@
+{
+  "name": "km5-02-normalisierung-praxis",
+  "version": "1.0.0",
+  "description": "Prisma-7-Scaffold (SQLite) zur Hausübung KM5-02 — Normalisierung 1NF–3NF",
+  "type": "module",
+  "scripts": {
+    "demo": "node src/queries.js",
+    "test": "node --test",
+    "db:migrate": "prisma migrate dev",
+    "db:generate": "prisma generate",
+    "db:seed": "node src/seed.js",
+    "db:reset": "prisma migrate reset --force",
+    "postinstall": "prisma generate"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@prisma/adapter-better-sqlite3": "^7.10.0",
+    "@prisma/client": "^7.10.0",
+    "dotenv": "^18.0.5",
+    "prisma": "^7.10.0"
+  },
+  "allowScripts": {
+    "@prisma/engines@7.10.0": true,
+    "better-sqlite3@12.11.1": true,
+    "prisma@7.10.0": true
+  }
+}
